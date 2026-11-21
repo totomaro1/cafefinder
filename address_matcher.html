@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>카카오맵 주소 매칭 도구</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+:root{font-family:system-ui,-apple-system,"Noto Sans KR",sans-serif;color:#202124;background:#f5f7fa}
+*{box-sizing:border-box}body{margin:0;padding:22px}main{max-width:1120px;margin:auto}
+h1{font-size:25px;margin:0 0 8px}.sub{color:#5f6368;margin:0 0 22px}
+.panel{background:white;border:1px solid #e2e6eb;border-radius:14px;padding:18px;margin:14px 0;box-shadow:0 2px 8px #00000008}
+label{font-weight:650;display:block;margin:0 0 7px}
+input,select,button{font:inherit}input[type=text],input[type=password],select{width:100%;padding:11px 12px;border:1px solid #cbd2da;border-radius:8px;background:white}
+input[type=file]{max-width:100%}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+button{border:0;border-radius:9px;padding:11px 16px;background:#fee500;color:#191919;font-weight:750;cursor:pointer}
+button.secondary{background:#edf0f4}button:disabled{opacity:.45;cursor:not-allowed}
+.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px}
+.note{font-size:13px;color:#626a73;line-height:1.55;margin-top:8px}
+.status{margin-top:12px;font-size:14px}.bar{height:9px;background:#edf0f4;border-radius:10px;overflow:hidden;margin-top:8px}.bar>div{height:100%;width:0;background:#16a36a;transition:width .15s}
+.stats{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}.stat{background:#f3f5f7;border-radius:9px;padding:9px 12px;font-size:13px}
+.tablewrap{overflow:auto;max-height:540px;border:1px solid #e4e7eb;border-radius:9px}
+table{border-collapse:collapse;width:100%;min-width:850px;font-size:13px}th,td{padding:9px 10px;border-bottom:1px solid #edf0f2;text-align:left;vertical-align:top}
+th{position:sticky;top:0;background:#f7f8fa;z-index:1}td select{min-width:230px;padding:7px}
+.pill{display:inline-block;border-radius:20px;padding:3px 8px;font-size:12px;font-weight:700}.ok{background:#e5f5ec;color:#167344}.review{background:#fff3d9;color:#8a5a00}.fail{background:#fde9e7;color:#b3261e}
+.hidden{display:none!important}
+.topbar{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:12px}
+.topbar .sub{margin-bottom:0}
+.api-tab{white-space:nowrap;flex-shrink:0}
+.api-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
+.developer-link{display:inline-flex;align-items:center;padding:10px 12px;border-radius:9px;background:#f2f4f7;color:#303846;text-decoration:none;font-size:14px;font-weight:650}
+@media(max-width:650px){body{padding:12px}.grid{grid-template-columns:1fr}h1{font-size:21px}.panel{padding:14px}.topbar{align-items:flex-start}.api-head{align-items:flex-start;flex-direction:column}}
+</style>
+</head>
+<body>
+<main>
+<header class="topbar">
+  <div>
+    <h1>카카오맵 주소 매칭 도구</h1>
+    <p class="sub">주소를 여러 방식으로 재검색해 최대한 가까운 도로명·지번 주소를 찾아 정리합니다.</p>
+  </div>
+  <button id="apiTab" class="secondary api-tab" type="button" aria-expanded="false">⚙ API 키 설정</button>
+</header>
+
+<section id="apiSettings" class="panel hidden">
+  <div class="api-head">
+    <div>
+      <strong>카카오맵 API 연결 설정</strong>
+      <p class="note">기본 JavaScript 키가 입력되어 있습니다. 연결 진단에 실패할 때만 새 키로 교체해 주세요.</p>
+    </div>
+    <span id="keyState" class="pill review">연결 확인 전</span>
+  </div>
+  <label for="apiKey">카카오 JavaScript 키</label>
+  <input id="apiKey" type="password" value="9ae1891ba1b0c1ff630450e76b284f50" autocomplete="off" placeholder="카카오 JavaScript 키 입력">
+  <div class="actions">
+    <button id="checkApi" class="secondary" type="button">JavaScript 키/API 연결 확인</button>
+    <button id="replaceKey" class="secondary" type="button">새 키 입력</button>
+    <a class="developer-link" href="https://developers.kakao.com/console/app" target="_blank" rel="noopener">카카오 개발자 콘솔에서 키 발급 ↗</a>
+  </div>
+  <section id="apiCheckPanel" class="panel hidden" style="margin-top:14px;background:#fbfcfd">
+    <strong>JavaScript 키 및 API 진단</strong>
+    <p class="note">브라우저 JavaScript 실행, 엑셀 라이브러리, 카카오 SDK, 주소 검색 API를 실제 요청으로 확인합니다.</p>
+    <div id="apiCheckResults" style="display:grid;gap:8px;margin-top:12px"></div>
+    <div id="apiCheckSummary" class="status" aria-live="polite"></div>
+  </section>
+  <div class="note">연결이 실패하면 카카오 개발자 콘솔에서 JavaScript 키를 새로 발급하고, 현재 실행 주소(localhost 또는 배포 도메인)를 플랫폼의 웹 도메인에 등록한 뒤 새 키를 입력하세요.</div>
+</section>
+
+<section class="panel">
+  <div>
+      <label for="file">엑셀 파일</label>
+      <input id="file" type="file" accept=".xlsx,.xls,.csv">
+      <div class="note">첫 번째 시트의 첫 행을 열 제목으로 읽습니다.</div>
+  </div>
+  <div class="grid" style="margin-top:15px">
+    <div>
+      <label for="sheet">시트 선택</label>
+      <select id="sheet" disabled><option>엑셀 파일을 먼저 선택하세요</option></select>
+    </div>
+    <div>
+      <label for="addressCol">주소가 들어 있는 열</label>
+      <select id="addressCol" disabled><option>엑셀 파일을 먼저 선택하세요</option></select>
+    </div>
+  </div>
+  <div class="actions">
+    <button id="start" disabled>주소 매칭 시작</button>
+    <button id="download" class="secondary" disabled>결과 엑셀 다운로드</button>
+  </div>
+  <div class="note">검색은 원문 주소 → 공백·기호 정리 주소 → 카카오 장소 검색 순서로 확장합니다. 짧거나 불완전한 주소는 후보가 여러 개 나올 수 있으므로 확인 후 저장하세요. 카카오 개발자 콘솔에 현재 접속 주소를 웹 도메인으로 등록해야 하며, localhost 실행을 권장합니다.</div>
+</section>
+
+<section id="progressPanel" class="panel hidden">
+  <strong id="progressText">준비 중...</strong>
+  <div class="bar"><div id="progressBar"></div></div>
+  <div class="stats">
+    <span class="stat">검색 대상 <b id="total">0</b></span>
+    <span class="stat">빈 주소 제외 <b id="skippedTotal">0</b></span>
+    <span class="stat">성공 <b id="success">0</b></span>
+    <span class="stat">확인 필요 <b id="reviewCount">0</b></span>
+    <span class="stat">실패 <b id="failed">0</b></span>
+  </div>
+  <div id="message" class="status"></div>
+</section>
+
+<section id="resultPanel" class="panel hidden">
+  <strong>매칭 결과</strong>
+  <p class="note">건물명과 동·호수는 도로명·지번 주소 뒤에 포함해 표시합니다. 별도의 건물명·동호수 열은 만들지 않습니다.</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>#</th><th>원본 주소</th><th>매칭된 도로명 주소</th><th>매칭된 지번 주소</th><th>상태</th><th>후보 선택</th></tr></thead>
+      <tbody id="results"></tbody>
+    </table>
+  </div>
+</section>
+</main>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  let workbook=null, rows=[], headers=[], activeSheet="", resultRows=[], geocoder=null, sdkPromise=null, sdkKey="", busy=false;
+  const DEFAULT_API_KEY="9ae1891ba1b0c1ff630450e76b284f50";
+  try{const savedKey=localStorage.getItem("kakaoAddressMatcherApiKey");if(savedKey)$("apiKey").value=savedKey;}catch(e){}
+  const pause = ms => new Promise(r=>setTimeout(r,ms));
+  function setMessage(s){$("message").textContent=s;}
+  function showCheck(label,state,detail){
+    const row=document.createElement("div");
+    row.style.cssText="display:flex;gap:9px;align-items:flex-start;padding:9px 10px;border:1px solid #e6e9ed;border-radius:8px;background:#fff;font-size:13px";
+    const badge=document.createElement("span");badge.className="pill "+(state==="정상"?"ok":state==="실패"?"fail":"review");badge.textContent=state;
+    const body=document.createElement("span");const title=document.createElement("b");title.textContent=label+" ";
+    const desc=document.createElement("span");desc.textContent=detail||"";body.append(title,desc);row.append(badge,body);$("apiCheckResults").appendChild(row);
+  }
+  function runGeocoderTest(){
+    return new Promise((resolve,reject)=>{
+      let done=false;
+      const timer=setTimeout(()=>{if(!done){done=true;reject(new Error("주소 검색 API 응답 시간 초과"));}},10000);
+      try{
+        const testGeocoder=new kakao.maps.services.Geocoder();
+        testGeocoder.addressSearch("서울특별시 중구 세종대로 110",(data,status)=>{
+          if(done)return;done=true;clearTimeout(timer);
+          if(status===kakao.maps.services.Status.OK && data && data.length){resolve(data[0]);}
+          else if(status===kakao.maps.services.Status.ZERO_RESULT){reject(new Error("API 응답은 왔지만 테스트 주소 검색 결과가 없습니다."));}
+          else{reject(new Error("주소 검색 API 응답 오류: "+status+". 키 권한과 웹 도메인 등록을 확인하세요."));}
+        });
+      }catch(e){if(!done){done=true;clearTimeout(timer);reject(e);}}
+    });
+  }
+  async function checkApi(){
+    const panel=$("apiCheckPanel");panel.classList.remove("hidden");$("apiCheckResults").innerHTML="";$("apiCheckSummary").textContent="진단 중입니다...";
+    const key=$("apiKey").value.trim();let failed=false;
+    showCheck("브라우저 JavaScript","정상","현재 페이지의 JavaScript가 실행되고 있습니다.");
+    if(typeof XLSX!=="undefined")showCheck("엑셀 라이브러리","정상","엑셀 파일 읽기/저장 라이브러리가 로드되었습니다.");
+    else{showCheck("엑셀 라이브러리","실패","라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인하세요.");failed=true;}
+    if(!key){showCheck("JavaScript 키 입력","실패","카카오 JavaScript 키를 입력한 뒤 다시 확인하세요.");$("apiCheckSummary").textContent="키를 입력해야 카카오 API를 검사할 수 있습니다.";return;}
+    showCheck("JavaScript 키 입력","정상","키가 입력되었습니다. 실제 API 요청으로 유효성을 검사합니다.");
+    try{
+      await loadSdk(key);
+      showCheck("카카오맵 SDK 인증/초기화","정상","SDK가 로드되고 services 라이브러리가 초기화되었습니다.");
+      if(typeof kakao.maps.services.Geocoder!=="function")throw new Error("Geocoder 기능을 찾을 수 없습니다.");
+      showCheck("주소 검색 기능(Geocoder)","정상","주소 검색 객체를 생성할 수 있습니다.");
+      const result=await runGeocoderTest();
+      showCheck("실제 주소 검색 API 요청","정상","테스트 주소가 검색되었습니다: "+(result.road_address?.address_name||result.address?.address_name||result.address_name));
+      $("apiCheckSummary").textContent="진단 완료: JavaScript 키와 카카오 주소 검색 API가 정상 작동합니다.";
+    }catch(e){
+      failed=true;showCheck("카카오 JavaScript 키/API","실패",e.message||String(e));
+      $("apiCheckSummary").textContent="진단 실패: 카카오 개발자 콘솔의 JavaScript 키, 웹 플랫폼 도메인, 앱 상태 및 인터넷 연결을 확인하세요.";
+    }
+  }
+  function loadSdk(key){
+    // 이미 다른 키로 SDK가 초기화됐다면 같은 페이지에서 SDK를 재인증할 수 없어 새로고침이 필요합니다.
+    if(sdkKey && sdkKey!==key) return Promise.reject(new Error("JavaScript 키를 변경했습니다. 새 키를 적용하려면 페이지를 새로고침한 뒤 다시 연결 확인을 눌러주세요."));
+    if(window.kakao && window.kakao.maps && window.kakao.maps.services && window.kakao.maps.services.Geocoder) return Promise.resolve();
+    if(sdkPromise) return sdkPromise;
+    sdkKey=key;
+    sdkPromise=new Promise((resolve,reject)=>{
+      const old=document.getElementById("kakao-sdk"); if(old) old.remove();
+      const script=document.createElement("script"); script.id="kakao-sdk";
+      // autoload=false로 두고 SDK 로드 후 maps.load 콜백에서 서비스 사용 가능 여부를 확인합니다.
+      script.src="https://dapi.kakao.com/v2/maps/sdk.js?appkey="+encodeURIComponent(key)+"&autoload=false&libraries=services";
+      let settled=false;
+      const timer=setTimeout(()=>finishError(new Error("카카오맵 SDK 응답 시간이 초과되었습니다. 인터넷 연결, JavaScript 키, 웹 플랫폼 도메인을 확인하세요.")),15000);
+      function finishError(err){
+        if(settled)return; settled=true; clearTimeout(timer); sdkPromise=null; sdkKey=""; reject(err);
+      }
+      script.onload=()=>{
+        if(!window.kakao || !window.kakao.maps || typeof window.kakao.maps.load!=="function"){
+          finishError(new Error("카카오맵 SDK는 내려받았지만 초기화 기능을 찾지 못했습니다. JavaScript 키가 맞는지 확인하세요.")); return;
+        }
+        try{
+          window.kakao.maps.load(()=>{
+            if(window.kakao && window.kakao.maps && window.kakao.maps.services && typeof window.kakao.maps.services.Geocoder==="function"){
+              if(!settled){settled=true;clearTimeout(timer);resolve();}
+            }else{
+              finishError(new Error("카카오 주소 검색 서비스(services)가 로드되지 않았습니다. 카카오 개발자 콘솔에서 JavaScript 키와 웹 플랫폼 도메인을 확인하고, 주소창으로 접속한 도메인이 등록되어 있는지 확인하세요."));
+            }
+          });
+        }catch(e){finishError(new Error("카카오맵 초기화 실패: "+(e.message||e)));}
+      };
+      script.onerror=()=>finishError(new Error("카카오맵 SDK를 불러오지 못했습니다. JavaScript 키와 웹 플랫폼 도메인 등록을 확인하세요."));
+      document.head.appendChild(script);
+    });
+    return sdkPromise;
+  }
+  function sheetToRows(name){
+    const ws=workbook.Sheets[name];
+    const data=XLSX.utils.sheet_to_json(ws,{header:1,defval:"",raw:false});
+    if(!data.length) return;
+    headers=(data[0]||[]).map((v,i)=>String(v||("열 "+(i+1))));
+    rows=data.slice(1).map((r,i)=>({excelRow:i+2,values:r}));
+    const sel=$("addressCol");sel.innerHTML="";
+    headers.forEach((h,i)=>{const o=document.createElement("option");o.value=i;o.textContent=h;sel.appendChild(o);});
+    const guess=headers.findIndex(h=>/주소|address|소재지|위치/i.test(h));
+    if(guess>=0)sel.value=guess;
+    $("addressCol").disabled=false;$("start").disabled=false;
+  }
+  $("apiTab").addEventListener("click",()=>{
+    const panel=$("apiSettings");const opening=panel.classList.contains("hidden");
+    panel.classList.toggle("hidden",!opening);$("apiTab").setAttribute("aria-expanded",String(opening));
+  });
+  $("checkApi").addEventListener("click",async()=>{
+    await checkApi();
+    const ok=$("apiCheckSummary").textContent.includes("정상 작동");
+    $("keyState").className="pill "+(ok?"ok":"fail");
+    $("keyState").textContent=ok?"연결 정상":"연결 실패";
+  });
+  $("replaceKey").addEventListener("click",()=>{
+    $("apiKey").value="";
+    try{localStorage.removeItem("kakaoAddressMatcherApiKey");}catch(e){}
+    $("apiKey").type="text";
+    $("apiKey").focus();
+    $("keyState").className="pill review";
+    $("keyState").textContent="새 키 입력 필요";
+  });
+  $("apiKey").addEventListener("input",()=>{
+    try{const value=$("apiKey").value.trim();if(value)localStorage.setItem("kakaoAddressMatcherApiKey",value);else localStorage.removeItem("kakaoAddressMatcherApiKey");}catch(e){}
+    $("keyState").className="pill review";$("keyState").textContent="연결 확인 전";
+  });
+  $("file").addEventListener("change", async e=>{
+    const f=e.target.files[0]; if(!f)return;
+    try{
+      const buf=await f.arrayBuffer();
+      workbook=XLSX.read(buf,{type:"array"});
+      $("sheet").innerHTML="";
+      workbook.SheetNames.forEach(n=>{const o=document.createElement("option");o.value=n;o.textContent=n;$("sheet").appendChild(o);});
+      $("sheet").disabled=false;activeSheet=workbook.SheetNames[0];sheetToRows(activeSheet);
+      $("download").disabled=true;$("resultPanel").classList.add("hidden");
+      $("progressPanel").classList.add("hidden");
+    }catch(err){alert("엑셀 파일을 읽지 못했습니다: "+err.message);}
+  });
+  $("sheet").addEventListener("change",e=>{activeSheet=e.target.value;sheetToRows(activeSheet);});
+  function searchAddress(query){
+    return new Promise(resolve=>{
+      geocoder.addressSearch(query,(data,status)=>{
+        if(status===kakao.maps.services.Status.OK) resolve(data||[]);
+        else resolve([]);
+      });
+    });
+  }
+  function searchKeyword(query){
+    return new Promise(resolve=>{
+      const places=new kakao.maps.services.Places();
+      places.keywordSearch(query,(data,status)=>{
+        if(status===kakao.maps.services.Status.OK) resolve(data||[]);
+        else resolve([]);
+      },{size:15});
+    });
+  }
+  function normalizeQuery(value){
+    return String(value||'').normalize("NFKC").replace(/[，,]/g,' ').replace(/[()（）]/g,' ')
+      .replace(/\s+/g,' ').trim();
+  }
+  function compact(value){return normalizeQuery(value).replace(/[\s·ㆍ.,-]/g,'').toLowerCase();}
+
+  // 동·호수는 주소 검색어에서 분리해 검색 성공률을 높이고, 최종 주소 뒤에 다시 붙입니다.
+  function extractUnitInfo(value){
+    const source=normalizeQuery(value);
+    let dong="", ho="", base=source;
+    const dongMatch=source.match(/(\d{1,4})\s*동/);
+    const hoMatch=source.match(/(\d{1,5})\s*호/);
+    if(dongMatch) dong=dongMatch[1];
+    if(hoMatch) ho=hoMatch[1];
+
+    // 101-1001처럼 동·호 표기가 생략된 끝자리 패턴은 호수가 3~5자리일 때만 동·호로 간주합니다.
+    // 123-4 같은 일반 지번은 이 조건에 해당하지 않아 보존됩니다.
+    if(!dong && !ho){
+      const pair=source.match(/(?:^|\s)(\d{1,4})\s*[-–—]\s*(\d{3,5})\s*$/);
+      if(pair){dong=pair[1];ho=pair[2];}
+    }
+    if(dong) base=base.replace(new RegExp(dong+"\\s*동","g")," ");
+    if(ho) base=base.replace(new RegExp(ho+"\\s*호","g")," ");
+    if(dong && ho){
+      const barePair=new RegExp("(^|\\s)"+dong+"\\s*[-–—]\\s*"+ho+"\\s*$");
+      base=base.replace(barePair," ");
+    }
+    base=normalizeQuery(base).replace(/[-–—]\s*$/,"").trim();
+    const suffix=[dong?dong+"동":"",ho?ho+"호":""].filter(Boolean).join(" ");
+    return {base:base||source,suffix,dong,ho};
+  }
+  function appendUnit(address,unit){
+    if(!address || !unit) return address||"";
+    const clean=normalizeQuery(address);
+    const normalizedUnit=unit.replace(/\s+/g," ").trim();
+    if(compact(clean).endsWith(compact(normalizedUnit))) return clean;
+    return clean+" "+normalizedUnit;
+  }
+  function appendLabel(address,label){
+    if(!address || !label) return address||"";
+    const clean=normalizeQuery(address), value=normalizeQuery(label);
+    if(compact(clean).includes(compact(value))) return clean;
+    return clean+" "+value;
+  }
+  function isBuildingCategory(category){
+    return /(아파트|오피스텔|빌딩|건물|주상복합|주택|공공기관|관공서|청사|학교|대학교|초등학교|중학교|고등학교|병원|도서관|문화시설|호텔|백화점|터미널)/i.test(category||"");
+  }
+  function getBuildingName(item){
+    const roadName=item?.road_address?.building_name||"";
+    if(roadName.trim()) return normalizeQuery(roadName);
+    if(item?._buildingName) return normalizeQuery(item._buildingName);
+    if(item?._placeName && (item._typedNameMatch || isBuildingCategory(item._category))) return normalizeQuery(item._placeName);
+    return "";
+  }
+  function nearSamePlace(a,b){
+    const fa=addressFields(a), fb=addressFields(b);
+    const aa=[fa.road,fa.jibun].filter(Boolean).map(compact);
+    const bb=[fb.road,fb.jibun].filter(Boolean).map(compact);
+    if(aa.some(x=>bb.includes(x))) return true;
+    const ax=Number(a.x), ay=Number(a.y), bx=Number(b.x), by=Number(b.y);
+    if([ax,ay,bx,by].every(Number.isFinite)) return Math.hypot((ax-bx)*Math.cos(ay*Math.PI/180),ay-by)<0.0012;
+    return false;
+  }
+  function candidateKey(item){
+    const f=addressFields(item);
+    return compact(f.road||'')+'|'+compact(f.jibun||'');
+  }
+  function asPlaceCandidate(item){
+    return {
+      address_name:item.address_name||'',
+      road_address:item.road_address_name?{address_name:item.road_address_name}:null,
+      address:item.address_name?{address_name:item.address_name}:null,
+      _placeName:item.place_name||'', _category:item.category_name||'',
+      _buildingName:(isBuildingCategory(item.category_name||"") ? (item.place_name||"") : ""),
+      _source:'장소 검색'
+    };
+  }
+  function similarityScore(query,item){
+    const q=compact(query); const f=addressFields(item);
+    const candidates=[compact(f.road),compact(f.jibun),compact(item.address_name),compact(item._placeName)].filter(Boolean);
+    let score=0;
+    for(const c of candidates){
+      if(c===q) score=Math.max(score,100);
+      else if(c.includes(q)||q.includes(c)) score=Math.max(score,78*Math.min(c.length,q.length)/Math.max(c.length,q.length));
+      else {
+        const tokens=normalizeQuery(query).split(' ').filter(Boolean);
+        const hits=tokens.filter(t=>[f.road,f.jibun,item.address_name,item._placeName].some(v=>compact(v).includes(compact(t))));
+        score=Math.max(score,tokens.length?65*hits.length/tokens.length:0);
+      }
+    }
+    return score;
+  }
+  async function findBestCandidates(original){
+    const unit=extractUnitInfo(original);
+    const cleaned=normalizeQuery(unit.base);
+    const originalClean=normalizeQuery(original);
+    const variants=[...new Set([cleaned,cleaned.replace(/\s+/g,''),originalClean])].filter(v=>v.length>=2);
+    let addressFound=[], placeFound=[];
+    // 동·호수를 제거한 주소를 우선 검색합니다.
+    for(const q of variants.slice(0,3)){
+      const docs=await searchAddress(q);
+      addressFound.push(...docs);
+      if(addressFound.length>=10) break;
+      await pause(80);
+    }
+    // 장소 검색은 건물명 확인을 위해 주소 검색 결과가 있어도 한 차례 수행합니다.
+    // 입력된 건물명 또는 카카오 장소 데이터의 건물 카테고리를 주소 결과와 결합합니다.
+    if(cleaned.length>=2){
+      const places=await searchKeyword(cleaned);
+      placeFound.push(...places.map(item=>{
+        const c=asPlaceCandidate(item);
+        const name=compact(c._placeName);
+        c._typedNameMatch=!!name && compact(originalClean).includes(name);
+        if(c._typedNameMatch) c._buildingName=c._placeName;
+        return c;
+      }));
+    }
+    // 주소 결과와 동일 위치의 장소 결과를 연결해 주소 결과에도 건물명을 붙입니다.
+    for(const address of addressFound){
+      const match=placeFound.find(place=>nearSamePlace(address,place) && getBuildingName(place));
+      if(match) address._buildingName=getBuildingName(match);
+    }
+    // 주소 API의 도로명 결과에 포함된 공식 건물명을 우선 사용합니다.
+    const all=[...addressFound,...placeFound.filter(place=>getBuildingName(place))];
+    const unique=new Map();
+    all.forEach(item=>{
+      const key=candidateKey(item);
+      if(!key) return;
+      if(!unique.has(key)) unique.set(key,item);
+      else {
+        const saved=unique.get(key);
+        if(!getBuildingName(saved) && getBuildingName(item)) saved._buildingName=getBuildingName(item);
+        if(!saved._placeName && item._placeName) saved._placeName=item._placeName;
+      }
+    });
+    return [...unique.values()].map(item=>({...item,_score:similarityScore(cleaned,item),_unit:unit.suffix,_buildingName:getBuildingName(item)}))
+      .sort((a,b)=>b._score-a._score).slice(0,15);
+  }
+  function statusFor(candidates){
+    if(!candidates.length)return "실패";
+    return candidates.length===1?"성공":"확인 필요";
+  }
+  function addressFields(item){
+    return {
+      road:item.road_address ? item.road_address.address_name : (item.road_address_name||""),
+      jibun:item.address ? item.address.address_name : (item.address_name||"")
+    };
+  }
+  function render(){
+    const body=$("results");body.innerHTML="";
+    resultRows.forEach((r,i)=>{
+      const tr=document.createElement("tr");
+      const td=(v)=>{const x=document.createElement("td");x.textContent=v;tr.appendChild(x);return x;};
+      td(String(i+1));td(r.original);
+      td(r.road||"—");td(r.jibun||"—");
+      const st=td("");const badge=document.createElement("span");badge.className="pill "+(r.status==="성공"?"ok":r.status==="확인 필요"?"review":"fail");badge.textContent=r.status;st.appendChild(badge);
+      const choice=td("");
+      if(r.candidates.length>1){
+        const sel=document.createElement("select");
+        const first=document.createElement("option");first.value="-1";first.textContent="후보 주소 선택";sel.appendChild(first);
+        r.candidates.forEach((c,j)=>{const f=addressFields(c);const o=document.createElement("option");o.value=j;o.textContent=(f.road||f.jibun||c.address_name||c._placeName)+" / "+(f.jibun||"지번 없음")+(getBuildingName(c)?" · 건물명: "+getBuildingName(c):"");sel.appendChild(o);});
+        sel.addEventListener("change",()=>{
+          const n=Number(sel.value);if(n<0)return;
+          const selected=r.candidates[n];const f=addressFields(selected);
+          r.unitSuffix=selected._unit||r.unitSuffix||"";r.buildingName=getBuildingName(selected)||r.buildingName||"";
+          r.road=appendUnit(appendLabel(f.road,r.buildingName),r.unitSuffix);
+          r.jibun=appendUnit(appendLabel(f.jibun,r.buildingName),r.unitSuffix);
+          r.status="성공";render();
+        });
+        choice.appendChild(sel);
+      } else choice.textContent=r.candidates.length?"단일 결과":"검색 결과 없음";
+      body.appendChild(tr);
+    });
+    $("resultPanel").classList.remove("hidden");
+  }
+  $("start").addEventListener("click",async()=>{
+    if(busy||!workbook)return;
+    const col=Number($("addressCol").value);
+    // 검색 시작 전 선택한 주소 열을 전체 검사해 검색 대상과 빈 주소 행을 확정합니다.
+    const addressValues=rows.map(r=>({row:r,value:String(r.values[col]??"")}));
+    const targets=addressValues.filter(x=>x.value.trim().length>0).map(x=>x.row);
+    const skipped=addressValues.filter(x=>x.value.trim().length===0).map(x=>x.row);
+    const key=$("apiKey").value.trim();
+    if(targets.length && !key){alert("카카오 JavaScript 키를 입력하세요.");return;}
+    if(!rows.length){alert("처리할 데이터가 없습니다.");return;}
+    busy=true;$("start").disabled=true;$("progressPanel").classList.remove("hidden");$("resultPanel").classList.add("hidden");
+    try{
+      // 모든 행을 결과에 포함하되, 주소가 빈 행은 API 검색 없이 즉시 건너뜁니다.
+      resultRows=[
+        ...targets.map(r=>({excelRow:r.excelRow,original:String(r.values[col]).trim(),road:"",jibun:"",status:"대기",candidates:[]})),
+        ...skipped.map(r=>({excelRow:r.excelRow,original:"",road:"",jibun:"",status:"빈 주소 - 검색 생략",candidates:[]}))
+      ].sort((a,b)=>a.excelRow-b.excelRow);
+      $("total").textContent=targets.length;
+      $("skippedTotal").textContent=skipped.length;
+      $("success").textContent="0";$("reviewCount").textContent="0";$("failed").textContent="0";
+      $("progressBar").style.width="0%";
+      $("progressText").textContent=`사전 확인 완료 · 전체 ${rows.length}행 중 검색 대상 ${targets.length}개, 빈 주소 ${skipped.length}개 제외`;
+      setMessage("빈 주소 행은 검색하지 않으며, 진행률은 실제 검색 대상만 기준으로 계산합니다.");
+      let ok=0,review=0,fail=0;
+      if(targets.length){
+        await loadSdk(key);
+        if(!window.kakao?.maps?.services?.Geocoder) throw new Error("주소 검색 기능(Geocoder)이 준비되지 않았습니다. 카카오 JavaScript 키와 웹 플랫폼 도메인 설정을 확인한 뒤 다시 시도하세요.");
+        geocoder=new kakao.maps.services.Geocoder();
+      }
+      for(let i=0;i<targets.length;i++){
+        const r=resultRows.find(x=>x.excelRow===targets[i].excelRow);
+        try{
+          r.candidates=await findBestCandidates(r.original);
+          r.status=statusFor(r.candidates);
+          if(r.candidates.length){const selected=r.candidates[0];const f=addressFields(selected);
+            r.unitSuffix=selected._unit||"";r.buildingName=getBuildingName(selected);
+            r.road=appendUnit(appendLabel(f.road,r.buildingName),r.unitSuffix);
+            r.jibun=appendUnit(appendLabel(f.jibun,r.buildingName),r.unitSuffix);
+            // 장소명만으로 찾은 결과나 유사도가 낮은 결과는 사용자가 확인하도록 표시합니다.
+            if(selected._source==="장소 검색" || selected._score<55) r.status="확인 필요";
+          }
+        }catch(e){r.status="실패";}
+        if(r.status==="성공")ok++;else if(r.status==="확인 필요")review++;else fail++;
+        $("success").textContent=ok;$("reviewCount").textContent=review;$("failed").textContent=fail;
+        const completed=i+1;
+        $("progressBar").style.width=(completed/targets.length*100)+"%";
+        $("progressText").textContent=`주소 매칭 중 ${completed} / ${targets.length}개 (${Math.round(completed/targets.length*100)}%)`;
+        if(completed%10===0||completed===targets.length)render();
+        await pause(120);
+      }
+      if(!targets.length){
+        $("progressBar").style.width="100%";
+        $("progressText").textContent="검색 대상 0개 · 검색할 주소가 없습니다";
+      }else{
+        $("progressBar").style.width="100%";
+        $("progressText").textContent=`검색 완료 · ${targets.length} / ${targets.length}개 (100%)`;
+      }
+      render();setMessage(targets.length ? "다단계 검색이 완료되었습니다. 빈 주소 행은 검색하지 않고 건너뛰었습니다. 장소 검색 결과·유사도가 낮은 결과·복수 후보는 확인한 뒤 엑셀로 저장하세요." : "주소가 입력된 행이 없어 카카오 API 검색을 실행하지 않았습니다. 빈 주소 행은 그대로 유지했습니다.");
+      $("download").disabled=false;
+    }catch(err){setMessage(err.message||String(err));alert(err.message||String(err));}
+    finally{busy=false;$("start").disabled=false;}
+  });
+  $("download").addEventListener("click",()=>{
+    if(!workbook||!resultRows.length)return;
+    const ws=workbook.Sheets[activeSheet];
+    const matrix=XLSX.utils.sheet_to_json(ws,{header:1,defval:"",raw:false});
+    const headerRow=matrix[0]||[];
+    const outHeaders=[...headerRow,"카카오 매칭 도로명주소","카카오 매칭 지번주소","주소 매칭 상태"];
+    const byRow=new Map(resultRows.map(r=>[r.excelRow,r]));
+    const out=[outHeaders];
+    for(let i=1;i<matrix.length;i++){
+      const vals=[...(matrix[i]||[])];
+      const r=byRow.get(i+1);
+      out.push([...vals,r?.road||"",r?.jibun||"",r?.status||"주소 없음"]);
+    }
+    const newWb=XLSX.utils.book_new();
+    const newWs=XLSX.utils.aoa_to_sheet(out);
+    // 열 너비를 실제 데이터 길이에 맞춰 자동 계산해 열자마자 내용이 잘 보이도록 설정합니다.
+    const displayWidth=(value)=>{
+      const s=String(value??"");
+      let width=0;
+      for(const ch of s) width += ch.charCodeAt(0)>255 ? 2 : 1;
+      return width;
+    };
+    const colCount=out.reduce((m,row)=>Math.max(m,row.length),0);
+    newWs["!cols"]=Array.from({length:colCount},(_,c)=>{
+      const maxLen=out.reduce((m,row)=>Math.max(m,displayWidth(row[c])),0);
+      return {wch:Math.min(72,Math.max(12,maxLen+3))};
+    });
+    newWs["!rows"]=out.map((_,i)=>({hpt:i===0?24:21}));
+    newWs["!freeze"]={xSplit:0,ySplit:1,topLeftCell:"A2",activePane:"bottomLeft",state:"frozen"};
+    if(out.length>1 && colCount>0){
+      newWs["!autofilter"]={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:out.length-1,c:colCount-1}})};
+    }
+    XLSX.utils.book_append_sheet(newWb,newWs,"주소 매칭 결과");
+    XLSX.writeFile(newWb,"카카오맵_주소매칭_결과.xlsx");
+  });
+})();
+</script>
+</body>
+</html>
