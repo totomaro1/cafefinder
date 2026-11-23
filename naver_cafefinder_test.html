@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NCP Maps · CafeFinder 테스트</title>
+<style>
+:root{--naver:#03c75a;--ink:#17202a;--muted:#667085;--line:#e5e7eb;--bg:#f5f7f8}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Arial,"Malgun Gothic",sans-serif}
+header{padding:18px 22px;background:#fff;border-bottom:1px solid var(--line)}
+h1{font-size:20px;margin:0 0 5px}header p{margin:0;color:var(--muted);font-size:13px}
+main{max-width:1440px;margin:18px auto;padding:0 16px;display:grid;grid-template-columns:360px 1fr;gap:16px}
+.panel,.map-panel{background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.panel{padding:16px}.section{padding-bottom:16px;margin-bottom:16px;border-bottom:1px solid var(--line)}
+.section:last-child{border:0;margin:0;padding:0}
+h2{font-size:15px;margin:0 0 12px}.field{margin:10px 0}label{display:block;font-size:12px;font-weight:700;margin-bottom:6px}
+input,select{width:100%;padding:11px 12px;border:1px solid #d0d5dd;border-radius:8px;font-size:14px;outline:none}
+input:focus,select:focus{border-color:var(--naver);box-shadow:0 0 0 3px #03c75a1a}
+button{border:0;border-radius:8px;background:var(--naver);color:white;padding:11px 13px;font-weight:700;cursor:pointer}
+button.secondary{background:#eef2f4;color:#344054}button:disabled{opacity:.5;cursor:not-allowed}
+.actions{display:flex;gap:8px}.actions button{flex:1}
+.hint{font-size:11px;color:var(--muted);line-height:1.55;margin:7px 0 0}
+.status{font-size:12px;line-height:1.5;padding:10px;border-radius:8px;background:#f2f4f7;color:#475467;white-space:pre-wrap}
+.status.ok{background:#ecfdf3;color:#027a48}.status.err{background:#fef3f2;color:#b42318}
+.map-panel{min-height:720px;display:flex;flex-direction:column}.map-head{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:10px;align-items:center}
+.map-head strong{font-size:14px}.map-head span{font-size:12px;color:var(--muted)}
+#map{height:560px;min-height:420px;width:100%;background:#eef2f4}
+.results{padding:14px 16px;max-height:300px;overflow:auto}.result{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid #f0f1f3;font-size:13px}
+.result:last-child{border:0}.result b{display:block;margin-bottom:4px}.result small{color:var(--muted);line-height:1.5}.dist{white-space:nowrap;font-weight:700;color:#344054}
+.pill{display:inline-block;padding:3px 7px;background:#f2f4f7;border-radius:99px;font-size:11px;color:#475467;margin-left:5px}
+.notice{font-size:12px;color:#7a2e0e;background:#fffaeb;padding:10px;border-radius:8px;line-height:1.55}
+@media(max-width:900px){main{grid-template-columns:1fr}.map-panel{min-height:600px}#map{height:440px}}
+</style>
+</head>
+<body>
+<header><h1>NCP Maps · CafeFinder 테스트</h1><p>지도·주소 좌표 변환·네이버 지역 검색 결과의 반경 필터링을 별도로 검증합니다.</p></header>
+<main>
+<aside class="panel">
+  <div class="section">
+    <h2>1. NCP Maps 연결</h2>
+    <div class="field"><label for="clientId">Maps Client ID (또는 Client ID에 해당하는 키)</label><input id="clientId" placeholder="NCP Maps 애플리케이션 Client ID"></div>
+    <button id="loadMap" style="width:100%">지도 연결하기</button>
+    <p class="hint">NCP 콘솔에서 Maps 애플리케이션에 Web Dynamic Map을 활성화하고, 서비스 URL에 현재 페이지의 도메인을 등록해야 합니다. Geocoding도 함께 신청해야 주소 검색이 동작합니다.</p>
+    <div id="mapStatus" class="status" style="margin-top:10px">아직 지도가 연결되지 않았습니다.</div>
+  </div>
+  <div class="section">
+    <h2>2. 중심지 주소 검색</h2>
+    <div class="field"><label for="centerQuery">주소 또는 장소명</label><input id="centerQuery" value="대전광역시 유성구 봉명동"></div>
+    <button id="findCenter" class="secondary" style="width:100%" disabled>주소 검색 및 지도 이동</button>
+    <p class="hint">Geocoding 결과의 좌표를 지도 중심으로 설정합니다.</p>
+    <div id="centerStatus" class="status" style="margin-top:10px">지도 연결 후 테스트할 수 있습니다.</div>
+  </div>
+  <div class="section">
+    <h2>3. 네이버 지역 검색 테스트</h2>
+    <div class="field"><label for="keyword">검색어</label><input id="keyword" value="컴포즈커피"></div>
+    <div class="field"><label for="proxyUrl">보안 프록시 주소</label><input id="proxyUrl" placeholder="예: https://내서버주소/api/naver-local"></div>
+    <div class="field"><label for="radius">중심지 기준 반경</label><select id="radius"><option value="2000">2km</option><option value="5000">5km</option></select></div>
+    <div class="actions"><button id="searchPlaces" disabled>장소 검색</button><button id="clearMarkers" class="secondary" disabled>마커 지우기</button></div>
+    <p class="hint">지역 검색 API는 현재 요청당 최대 5개 결과를 제공합니다. 브라우저에 Client Secret을 직접 입력하지 않도록 프록시 방식으로 구성했습니다.</p>
+    <div id="searchStatus" class="status" style="margin-top:10px">장소 검색은 프록시 서버 연결 후 테스트할 수 있습니다.</div>
+  </div>
+  <div class="section">
+    <div class="notice"><b>중요한 제한</b><br>네이버 지역 검색은 지도 화면의 현재 위치 주변을 검색하는 반경 검색 API가 아닙니다. 검색어 관련 결과 중 최대 5개를 받아 좌표로 반경을 필터링하는 테스트입니다. 따라서 2km·5km 안의 전체 카페 목록을 보장하지 않습니다.</div>
+  </div>
+</aside>
+<section class="map-panel">
+  <div class="map-head"><strong>네이버 지도</strong><span id="mapCoords">중심지 미설정</span></div>
+  <div id="map"></div>
+  <div class="results"><h2 style="margin-bottom:4px">검색 결과 <span class="pill" id="resultCount">0개</span></h2><div id="resultList" class="hint">검색 결과가 여기에 표시됩니다.</div></div>
+</section>
+</main>
+<script>
+let map=null, centerMarker=null, markers=[], centerPoint=null, mapLoaded=false;
+const $=id=>document.getElementById(id);
+function setStatus(id,msg,type=""){const el=$(id);el.className="status"+(type?" "+type:"");el.textContent=msg;}
+function loadNaverMap(){
+  const key=$("clientId").value.trim();
+  if(!key){setStatus("mapStatus","Client ID를 입력해 주세요.","err");return;}
+  if(mapLoaded){setStatus("mapStatus","이미 지도 SDK가 연결되어 있습니다. 키를 바꾸려면 페이지를 새로고침해 주세요.","ok");return;}
+  const script=document.createElement("script");
+  script.src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId="+encodeURIComponent(key)+"&submodules=geocoder";
+  script.onload=()=>{
+    try{
+      map=new naver.maps.Map("map",{center:new naver.maps.LatLng(36.3504,127.3845),zoom:13,zoomControl:true,zoomControlOptions:{position:naver.maps.Position.TOP_RIGHT}});
+      mapLoaded=true;
+      $("findCenter").disabled=false;$("searchPlaces").disabled=false;$("clearMarkers").disabled=false;
+      setStatus("mapStatus","NCP Maps 연결 성공. 지도 타일이 보이는지 확인해 주세요.","ok");
+      $("mapCoords").textContent="대전광역시청 부근 (초기 위치)";
+    }catch(e){setStatus("mapStatus","지도 초기화 오류: "+e.message,"err");}
+  };
+  script.onerror=()=>setStatus("mapStatus","지도 SDK 로드 실패. Client ID, Web Dynamic Map 활성화, 등록된 서비스 URL을 확인해 주세요.","err");
+  document.head.appendChild(script);
+  setStatus("mapStatus","지도 SDK를 불러오는 중입니다...");
+}
+function geocodeCenter(){
+  if(!mapLoaded||!window.naver?.maps?.Service){setStatus("centerStatus","지도 SDK와 Geocoding 모듈을 먼저 연결해 주세요.","err");return;}
+  const query=$("centerQuery").value.trim();if(!query)return;
+  setStatus("centerStatus","주소를 검색하는 중입니다...");
+  naver.maps.Service.geocode({query},(status,response)=>{
+    if(status!==naver.maps.Service.Status.OK||!response.v2||!response.v2.addresses.length){
+      setStatus("centerStatus","주소 검색 결과가 없습니다. Geocoding 서비스 신청 여부와 주소를 확인해 주세요.","err");return;
+    }
+    const a=response.v2.addresses[0], lat=Number(a.y),lng=Number(a.x);
+    centerPoint={lat,lng};
+    const pos=new naver.maps.LatLng(lat,lng);map.setCenter(pos);map.setZoom(15);
+    if(centerMarker)centerMarker.setMap(null);
+    centerMarker=new naver.maps.Marker({position:pos,map,title:query});
+    $("mapCoords").textContent=lat.toFixed(6)+", "+lng.toFixed(6);
+    setStatus("centerStatus","중심지 확인 성공\n주소: "+(a.roadAddress||a.jibunAddress||query)+"\n위도: "+lat+"\n경도: "+lng,"ok");
+  });
+}
+function distanceMeters(a,b){
+  const R=6371000,rad=v=>v*Math.PI/180;
+  const dLat=rad(b.lat-a.lat),dLng=rad(b.lng-a.lng);
+  const x=Math.sin(dLat/2)**2+Math.cos(rad(a.lat))*Math.cos(rad(b.lat))*Math.sin(dLng/2)**2;
+  return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+function clearPlaceMarkers(){markers.forEach(m=>m.setMap(null));markers=[];$("resultList").textContent="검색 결과가 여기에 표시됩니다.";$("resultCount").textContent="0개";}
+async function searchLocal(){
+  if(!centerPoint){setStatus("searchStatus","먼저 중심지를 검색해 주세요.","err");return;}
+  const endpoint=$("proxyUrl").value.trim(),query=$("keyword").value.trim();
+  if(!endpoint){setStatus("searchStatus","지역 검색 API의 Client Secret을 안전하게 보관할 프록시 서버 주소가 필요합니다. HTML에 Secret을 직접 넣지 않도록 설계했습니다.","err");return;}
+  if(!query)return;
+  setStatus("searchStatus","네이버 지역 검색 API에 요청 중입니다...");
+  try{
+    const response=await fetch(endpoint+(endpoint.includes("?")?"&":"?")+"query="+encodeURIComponent(query),{headers:{Accept:"application/json"}});
+    if(!response.ok)throw new Error("프록시 HTTP "+response.status);
+    const data=await response.json();
+    if(!Array.isArray(data.items))throw new Error("응답에 items 배열이 없습니다. 프록시는 NAVER API HUB 응답 JSON을 그대로 반환해야 합니다.");
+    clearPlaceMarkers();
+    const radius=Number($("radius").value);
+    const items=data.items.map(item=>{
+      const lat=Number(item.mapy),lng=Number(item.mapx);
+      const d=Number.isFinite(lat)&&Number.isFinite(lng)?distanceMeters(centerPoint,{lat,lng}):Infinity;
+      return {...item,lat,lng,distance:d};
+    }).filter(x=>Number.isFinite(x.distance)&&x.distance<=radius).sort((a,b)=>a.distance-b.distance);
+    items.forEach((item,i)=>{
+      const marker=new naver.maps.Marker({position:new naver.maps.LatLng(item.lat,item.lng),map,title:item.title.replace(/<[^>]*>/g,"")});
+      markers.push(marker);
+      const name=item.title.replace(/<[^>]*>/g,"");
+      const info=new naver.maps.InfoWindow({content:'<div style="padding:10px;font-size:13px;min-width:150px"><b>'+escapeHtml(name)+'</b><br><span style="color:#667085">'+(item.category||"업종 정보 없음")+'</span><br>'+Math.round(item.distance)+'m</div>'});
+      naver.maps.Event.addListener(marker,"click",()=>info.open(map,marker));
+    });
+    $("resultCount").textContent=items.length+"개";
+    if(!items.length){$("resultList").textContent="검색 결과 중 "+(radius/1000)+"km 안에 포함된 장소가 없습니다. (API가 반환한 원본 결과: "+data.items.length+"개)";}
+    else $("resultList").innerHTML=items.map(item=>'<div class="result"><div><b>'+escapeHtml(item.title.replace(/<[^>]*>/g,""))+'</b><small>'+escapeHtml(item.category||"업종 정보 없음")+'<br>'+escapeHtml(item.roadAddress||item.address||"주소 정보 없음")+'</small></div><div class="dist">'+Math.round(item.distance).toLocaleString()+'m</div></div>').join("");
+    setStatus("searchStatus","검색 성공\n원본 검색 결과: "+data.items.length+"개\n반경 내 결과: "+items.length+"개\n※ 지역 검색 API 응답은 요청당 최대 5개입니다. 반경 내 전체 카페 수가 아닙니다.", "ok");
+    if(items.length){const bounds=new naver.maps.LatLngBounds();bounds.extend(new naver.maps.LatLng(centerPoint.lat,centerPoint.lng));items.forEach(x=>bounds.extend(new naver.maps.LatLng(x.lat,x.lng)));map.fitBounds(bounds);}
+  }catch(e){setStatus("searchStatus","검색 실패: "+e.message+"\n프록시가 NAVER API HUB 인증 헤더를 사용하고 CORS를 허용하는지 확인해 주세요.","err");}
+}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+$("loadMap").addEventListener("click",loadNaverMap);
+$("findCenter").addEventListener("click",geocodeCenter);
+$("centerQuery").addEventListener("keydown",e=>{if(e.key==="Enter")geocodeCenter();});
+$("searchPlaces").addEventListener("click",searchLocal);
+$("clearMarkers").addEventListener("click",clearPlaceMarkers);
+</script>
+</body>
+</html>
