@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>카카오 장소 검색 비교 테스트</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Malgun Gothic",sans-serif;color:#222;background:#f5f6f8}
+*{box-sizing:border-box}body{margin:0;padding:24px;max-width:1050px;margin-inline:auto}
+h1{font-size:24px;margin:0 0 8px}p{line-height:1.55;color:#555}
+.panel{background:#fff;border:1px solid #ddd;border-radius:12px;padding:18px;margin:14px 0}
+label{display:block;font-weight:650;margin:10px 0 6px}
+input,select,button{font:inherit;padding:10px 12px;border:1px solid #bbb;border-radius:8px}
+input{width:100%}button{cursor:pointer;background:#fee500;border-color:#e5d000;font-weight:700}
+button:disabled{opacity:.5;cursor:wait}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.status{padding:10px;border-radius:8px;background:#f0f3f7;margin-top:12px;white-space:pre-wrap}
+.test{border-top:1px solid #eee;padding:14px 0}.test:first-child{border-top:0}
+.test h3{font-size:17px;margin:0 0 8px}.meta{font-size:13px;color:#666}
+.place{padding:10px 0;border-top:1px dashed #ddd}.place strong{display:block}
+.place small{display:block;color:#555;line-height:1.5;margin-top:4px}
+.pill{display:inline-block;background:#edf2ff;color:#334a88;padding:2px 7px;border-radius:20px;font-size:12px;margin-left:5px}
+.error{color:#b42318}.ok{color:#147d42}
+@media(max-width:650px){body{padding:14px}.row{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<h1>카카오 장소 검색 비교 테스트</h1>
+<p>목표: 카카오맵 웹에서는 검색되는 <b>카페 까르페(와동점)</b>이 카카오 JavaScript 키워드 검색에서도 반환되는지, 검색어와 반경 조건별로 비교합니다.</p>
+
+<section class="panel">
+  <div class="row">
+    <div>
+      <label for="key">카카오 JavaScript 키</label>
+      <input id="key" value="9ae1891ba1b0c1ff630450e76b284f50" autocomplete="off">
+    </div>
+    <div>
+      <label for="pages">검색 페이지 수 (최대 3페이지)</label>
+      <select id="pages"><option value="1">1페이지</option><option value="2">2페이지</option><option value="3" selected>3페이지</option></select>
+    </div>
+  </div>
+  <div class="row">
+    <div>
+      <label for="center">중심지 (반경 테스트용)</label>
+      <input id="center" value="대전 와동">
+    </div>
+    <div>
+      <label for="radius">반경</label>
+      <select id="radius"><option value="2000">2km</option><option value="5000" selected>5km</option></select>
+    </div>
+  </div>
+  <div class="actions">
+    <button id="run">4가지 검색 비교 시작</button>
+    <button id="clear" type="button">결과 지우기</button>
+  </div>
+  <div id="status" class="status">검색 전입니다. 현재 페이지를 카카오 개발자 콘솔에 등록된 도메인에서 열어주세요.</div>
+</section>
+
+<section class="panel">
+  <h2 style="font-size:19px;margin:0 0 8px">검색 결과</h2>
+  <p style="margin-top:0">각 검색어별 결과 수와 반환된 장소의 이름·업종·주소를 비교해 주세요. 대상 매장이 없으면 해당 검색어 결과가 0개로 표시됩니다.</p>
+  <div id="results">아직 실행된 검색이 없습니다.</div>
+</section>
+
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  let sdkReady = false;
+  let places = null;
+  let geocoder = null;
+
+  function setStatus(msg, cls="") {
+    $("status").className = "status " + cls;
+    $("status").textContent = msg;
+  }
+  function esc(v) {
+    return String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  }
+  function loadSdk() {
+    return new Promise((resolve,reject)=>{
+      if (location.protocol === "file:") {
+        reject(new Error("file:// 로 직접 열 수 없습니다. 카카오 콘솔에 등록된 웹 도메인(예: 기존 GitHub Pages 주소) 또는 등록된 localhost 서버에서 열어주세요."));
+        return;
+      }
+      const key = $("key").value.trim();
+      if (!key) { reject(new Error("카카오 JavaScript 키를 입력해 주세요.")); return; }
+      if (sdkReady && window.kakao?.maps?.services) { resolve(); return; }
+      const old = document.getElementById("kakao-sdk");
+      if (old) old.remove();
+      sdkReady = false;
+      const script = document.createElement("script");
+      script.id = "kakao-sdk";
+      script.src = "https://dapi.kakao.com/v2/maps/sdk.js?appkey=" + encodeURIComponent(key) + "&libraries=services&autoload=false";
+      script.onload = () => {
+        if (!window.kakao || !kakao.maps || typeof kakao.maps.load !== "function") {
+          reject(new Error("카카오 지도 SDK가 정상적으로 초기화되지 않았습니다. JavaScript 키와 등록 도메인을 확인해 주세요."));
+          return;
+        }
+        kakao.maps.load(() => {
+          if (!kakao.maps.services || !kakao.maps.services.Places || !kakao.maps.services.Geocoder) {
+            reject(new Error("카카오 SDK는 불러왔지만 services 라이브러리가 준비되지 않았습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요."));
+            return;
+          }
+          places = new kakao.maps.services.Places();
+          geocoder = new kakao.maps.services.Geocoder();
+          sdkReady = true;
+          resolve();
+        });
+      };
+      script.onerror = () => reject(new Error("카카오 SDK를 불러오지 못했습니다. 키 또는 등록 도메인을 확인해 주세요."));
+      document.head.appendChild(script);
+    });
+  }
+
+  function keywordSearch(query, opts, pages) {
+    return new Promise(resolve=>{
+      const all = [];
+      let page = 1;
+      let lastMeta = null;
+      const next = () => {
+        places.keywordSearch(query, (data,status,pagination)=>{
+          lastMeta = pagination || null;
+          if (status === kakao.maps.services.Status.OK && data) all.push(...data);
+          if (pagination && pagination.hasNextPage && page < pages && status === kakao.maps.services.Status.OK) {
+            page++;
+            pagination.gotoPage(page);
+          } else {
+            resolve({query,status:status===kakao.maps.services.Status.OK?"OK":status===kakao.maps.services.Status.ZERO_RESULT?"ZERO_RESULT":String(status),data:all,meta:lastMeta});
+          }
+        }, opts || {});
+      };
+      next();
+    });
+  }
+
+  function renderResult(r, index) {
+    const foundTarget = r.data.some(p => (p.place_name||"").includes("까르페"));
+    let html = `<div class="test"><h3>${index+1}. ${esc(r.query)} <span class="pill">${esc(r.status)}</span></h3>`;
+    html += `<div class="meta">반환 결과: ${r.data.length}개${r.meta ? ` · 마지막 페이지: ${r.meta.current}` : ""}${foundTarget ? ' · <b class="ok">까르페 포함 결과 발견</b>' : ""}</div>`;
+    if (!r.data.length) html += `<p class="meta">이 검색어에서는 반환된 장소가 없습니다.</p>`;
+    r.data.forEach((p,i)=>{
+      html += `<div class="place"><strong>${i+1}. ${esc(p.place_name)}</strong>`;
+      html += `<small>업종: ${esc(p.category_name)}<br>도로명: ${esc(p.road_address_name || "-")}<br>지번: ${esc(p.address_name || "-")}<br>거리: ${p.distance ? esc(p.distance)+"m" : "미제공"}<br>좌표: ${esc(p.y)}, ${esc(p.x)}<br><a href="${esc(p.place_url)}" target="_blank" rel="noopener">카카오 장소 페이지 열기</a></small></div>`;
+    });
+    return html + "</div>";
+  }
+
+  $("run").addEventListener("click", async()=>{
+    const btn = $("run");
+    btn.disabled = true;
+    $("results").textContent = "검색 준비 중...";
+    try {
+      await loadSdk();
+      const centerText = $("center").value.trim();
+      const radius = Number($("radius").value);
+      const pages = Number($("pages").value);
+      setStatus("SDK 연결 성공. 중심지 좌표를 확인하고 검색을 시작합니다.","ok");
+
+      const center = await new Promise(resolve=>{
+        geocoder.addressSearch(centerText,(data,status)=>{
+          if(status===kakao.maps.services.Status.OK && data.length){
+            resolve({ok:true,lat:Number(data[0].y),lng:Number(data[0].x),address:data[0].road_address?.address_name || data[0].address_name});
+          } else resolve({ok:false});
+        });
+      });
+      if (!center.ok) throw new Error("중심지 주소를 좌표로 변환하지 못했습니다: " + centerText);
+
+      const queries = [
+        {label:"지역명 포함 검색",q:"대전 대덕구 와동 카페 까르페",opts:{}},
+        {label:"상호명 붙여쓰기 검색",q:"카페까르페 와동점",opts:{}},
+        {label:"상호명 중심 검색",q:"까르페 와동점",opts:{}},
+        {label:"기존 확장 검색어 (반경 제한 없음)",q:"카페 까르페",opts:{}}
+      ];
+      setStatus(`SDK 연결 성공\n중심지: ${centerText}\n변환 주소: ${center.address}\n좌표: ${center.lat}, ${center.lng}\n\n4개 검색어를 반경 제한 없이 각각 검색합니다.`, "ok");
+      const results = [];
+      for (const item of queries) {
+        const r = await keywordSearch(item.q,item.opts,pages);
+        r.label = item.label;
+        results.push(r);
+      }
+
+      const bounded = await keywordSearch("카페 까르페",{location:new kakao.maps.LatLng(center.lat,center.lng),radius,sort:kakao.maps.services.SortBy.DISTANCE},pages);
+      bounded.label = `좌표·반경 적용 검색 (${radius/1000}km)`;
+      results.push(bounded);
+
+      $("results").innerHTML = results.map((r,i)=>renderResult(r,i)).join("");
+      const targetCount = results.filter(r=>r.data.some(p=>(p.place_name||"").includes("까르페"))).length;
+      setStatus(`검색 완료\n중심지 좌표: ${center.lat}, ${center.lng}\n총 ${results.length}개 조건 검색 완료\n'까르페'가 포함된 결과가 나온 조건: ${targetCount}개\n\n결과 전체를 확인하거나 화면을 캡처해 보내주세요.`,targetCount?"ok":"");
+    } catch(e) {
+      setStatus("오류: " + (e?.message || e) + "\n\n브라우저 개발자도구(F12)의 Console에 추가 오류가 있는지도 확인해 주세요.","error");
+      $("results").textContent = "검색이 완료되지 않았습니다.";
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  $("clear").addEventListener("click",()=>{
+    $("results").textContent = "아직 실행된 검색이 없습니다.";
+    setStatus("결과를 지웠습니다.");
+  });
+})();
+</script>
+</body>
+</html>
