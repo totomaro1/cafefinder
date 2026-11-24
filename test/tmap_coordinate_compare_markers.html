@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TMAP 장소 좌표 비교 테스트</title>
+<script>
+(function(){
+  var key='YCRfBz0PAh5OmDCV20tFWaLOlUXkdL8223YwBYAT';
+  try { key=localStorage.getItem('tmap_app_key') || key; } catch(e) {}
+  window.__TMAP_TEST_KEY__=key;
+  document.write('<script id="tmap-map-sdk-script" src="https://apis.openapi.sk.com/tmap/jsv2?version=1&appKey='+encodeURIComponent(key)+'"><\/script>');
+})();
+</script>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial,'Malgun Gothic',sans-serif;color:#222;background:#f5f6f8}
+header{padding:16px 20px;background:#202a35;color:#fff}header h1{font-size:20px;margin:0 0 6px}header p{margin:0;color:#d5dce3;font-size:13px}
+main{display:grid;grid-template-columns:minmax(300px,370px) 1fr;gap:14px;padding:14px;height:calc(100vh - 76px)}
+.panel{background:#fff;border:1px solid #dfe3e8;border-radius:10px;overflow:hidden;display:flex;flex-direction:column;min-height:0}
+.controls{padding:14px;border-bottom:1px solid #e8ebef}.field{display:flex;gap:7px;margin:8px 0}.field input{min-width:0;flex:1;padding:10px;border:1px solid #cbd2da;border-radius:6px;font-size:14px}.field button,.action{border:0;border-radius:6px;padding:10px 13px;background:#1769aa;color:#fff;font-weight:700;cursor:pointer}.field button:disabled{opacity:.5;cursor:wait}.toggles{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;margin-top:10px}.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px}.red{background:#e53935}.blue{background:#1976d2}.muted{font-size:12px;color:#66717d;line-height:1.5}.status{font-size:12px;color:#44515e;margin-top:9px;min-height:18px}
+#results{overflow:auto;padding:8px}.place{padding:11px;border-bottom:1px solid #edf0f3;cursor:pointer}.place:hover,.place.active{background:#eef6ff}.place strong{display:block;font-size:14px;margin-bottom:5px}.coords{font-size:11px;line-height:1.55;color:#59636e;word-break:break-all}.tag{display:inline-block;padding:2px 6px;border-radius:4px;color:#fff;font-size:10px;margin-right:4px}.tag.redtag{background:#d93632}.tag.bluetag{background:#1769bd}.tag.graytag{background:#68727d}
+.mapwrap{position:relative;min-height:350px;flex:1}#map{width:100%;height:100%;min-height:350px}.mapnote{position:absolute;top:10px;left:10px;background:#fff;padding:8px 10px;border-radius:7px;box-shadow:0 1px 6px #0002;font-size:12px;z-index:500}
+.details{max-height:220px;overflow:auto;border-top:1px solid #e6e9ed;padding:10px 14px;font-size:12px}.details table{border-collapse:collapse;width:100%;min-width:520px}.details th,.details td{border-bottom:1px solid #edf0f3;padding:6px;text-align:left;vertical-align:top}.details th{background:#f7f8fa;white-space:nowrap}.details code{font-size:11px;word-break:break-all}
+@media(max-width:800px){main{height:auto;min-height:calc(100vh - 76px);grid-template-columns:1fr}.panel:first-child{max-height:45vh}.mapwrap{height:55vh;flex:none}}
+</style>
+</head>
+<body>
+<header><h1>TMAP 장소 좌표 비교 테스트</h1><p>동일한 POI의 시설물 중심 좌표(center)와 주변 POI 좌표(noor)를 지도에서 비교합니다.</p></header>
+<main>
+<section class="panel">
+  <div class="controls">
+    <div class="muted">검색어를 입력하고 검색하세요. 예: 스타벅스, 투썸플레이스, 카페</div>
+    <div class="field"><input id="keyword" value="스타벅스" placeholder="장소 검색어"><button id="searchBtn">검색</button></div>
+    <div class="field"><input id="appKey" type="password" placeholder="TMAP AppKey" autocomplete="off"><button id="saveKey">키 저장</button></div>
+    <div class="toggles">
+      <label><input type="checkbox" id="showCenter" checked> <span class="dot red"></span>center</label>
+      <label><input type="checkbox" id="showNoor" checked> <span class="dot blue"></span>noor</label>
+      <label><input type="checkbox" id="showFront" checked> <span class="dot" style="background:#16a34a"></span>front</label>
+      <label><input type="checkbox" id="showLatlon" checked> <span class="dot" style="background:#9333ea"></span>lat/lon</label>
+      <label><input type="checkbox" id="showGps" checked> <span class="dot" style="background:#d97706"></span>gps</label>
+    </div>
+    <div class="status" id="status">지도와 검색 API를 준비하고 있습니다.</div>
+  </div>
+  <div id="results"><div class="muted">검색 결과가 여기에 표시됩니다.</div></div>
+</section>
+<section class="panel">
+  <div class="mapwrap"><div id="map"></div><div class="mapnote"><span class="dot red"></span>C center &nbsp; <span class="dot blue"></span>N noor &nbsp; <span class="dot" style="background:#16a34a"></span>F front<br><span class="muted">보라색 L=lat/lon · 주황색 G=gps<br>목록에서 장소를 선택하면 해당 장소의 좌표 마커만 표시합니다.</span></div></div>
+  <div class="details" id="details"><span class="muted">장소를 선택하면 좌표 비교 정보와 원본 필드가 표시됩니다.</span></div>
+</section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+let map=null, markers=[], places=[], selectedIndex=-1;
+const DEFAULT_KEY=window.__TMAP_TEST_KEY__||'';
+$('appKey').value=DEFAULT_KEY;
+function setStatus(s){$('status').textContent=s}
+function getKey(){return ($('appKey').value||'').trim()}
+function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function initMap(){
+ if(!window.Tmapv2||!Tmapv2.Map){setStatus('TMAP 지도 SDK가 아직 준비되지 않았습니다. 페이지를 새로고침하거나 AppKey 및 SDK 권한을 확인해주세요.');return false}
+ if(map)return true;
+ try {
+  map=new Tmapv2.Map('map',{center:new Tmapv2.LatLng(37.5665,126.9780),width:'100%',height:'100%',zoom:22,zoomControl:true,scrollwheel:true});
+  return true;
+ } catch(e) { setStatus('TMAP 지도 초기화 실패: '+(e.message||e)); return false; }
+}
+function coordsFrom(obj,latKey,lonKey){
+ if(!obj)return null;const lat=Number(obj[latKey]),lon=Number(obj[lonKey]);
+ if(!Number.isFinite(lat)||!Number.isFinite(lon)||lat===0||lon===0||Math.abs(lat)>90||Math.abs(lon)>180)return null;
+ return {lat,lon};
+}
+function roadItems(poi){const v=poi?.newAddressList?.newAddress;return Array.isArray(v)?v:(v?[v]:[])}
+function pickCoord(poi,keys){
+ for(const obj of [poi,...roadItems(poi)]){const c=coordsFrom(obj,keys[0],keys[1]);if(c)return c}
+ return null;
+}
+function getPoiArray(data){const n=data?.searchPoiInfo?.pois?.poi??[];return Array.isArray(n)?n:(n?[n]:[])}
+function makeIcon(color,label){
+ const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="30" height="38" viewBox="0 0 30 38"><path d="M15 1C7.3 1 1 7.2 1 14.8 1 25 15 37 15 37S29 25 29 14.8C29 7.2 22.7 1 15 1Z" fill="${color}" stroke="white" stroke-width="2"/><circle cx="15" cy="14" r="8" fill="white"/><text x="15" y="17" text-anchor="middle" font-size="9" font-family="Arial" font-weight="bold" fill="${color}">${label}</text></svg>`;
+ return 'data:image/svg+xml;charset=UTF-8,'+encodeURIComponent(svg);
+}
+function clearMarkers(){markers.forEach(m=>{try{m.setMap(null)}catch(e){}});markers=[]}
+function drawMarkers(){
+ clearMarkers();if(!map||selectedIndex<0||!places[selectedIndex])return;
+ const p=places[selectedIndex];
+ const candidates=[
+  ['center',p.center,'#e53935','C','showCenter'],
+  ['noor',p.noor,'#1976d2','N','showNoor'],
+  ['front',p.front,'#16a34a','F','showFront'],
+  ['lat/lon',p.latlon,'#9333ea','L','showLatlon'],
+  ['gps',p.gps,'#d97706','G','showGps']
+ ];
+ candidates.forEach(([name,c,color,label,toggle])=>{
+  if($(toggle).checked&&c){
+   const marker=new Tmapv2.Marker({
+    map:map,
+    position:new Tmapv2.LatLng(c.lat,c.lon),
+    icon:makeIcon(color,label),
+    iconSize:new Tmapv2.Size(34,42),
+    iconAnchor:new Tmapv2.Point(17,42),
+    title:p.name+' '+name+' ('+c.lat+', '+c.lon+')'
+   });
+   markers.push(marker);
+  }
+ });
+}
+function renderList(){
+ if(!places.length){$('results').innerHTML='<div class="muted">검색 결과가 없습니다.</div>';return}
+ $('results').innerHTML=places.map((p,i)=>{
+  const c=p.center?`${p.center.lat}, ${p.center.lon}`:'없음';const n=p.noor?`${p.noor.lat}, ${p.noor.lon}`:'없음';
+  return `<div class="place ${i===selectedIndex?'active':''}" data-i="${i}"><strong>${i+1}. ${escapeHtml(p.name)}</strong><div class="coords"><span class="tag redtag">C</span>${escapeHtml(c)}<br><span class="tag bluetag">N</span>${escapeHtml(n)}<br><span class="tag graytag">출입구</span>${escapeHtml(p.front?`${p.front.lat}, ${p.front.lon}`:'없음')}</div></div>`
+ }).join('');
+ $('results').querySelectorAll('.place').forEach(el=>el.addEventListener('click',()=>selectPlace(Number(el.dataset.i))));
+}
+function showDetails(i){
+ const p=places[i];if(!p)return;
+ const rows=[['centerLat / centerLon',p.center],['noorLat / noorLon',p.noor],['frontLat / frontLon',p.front],['lat / lon',p.latlon],['gpsY / gpsX',p.gps]];
+ $('details').innerHTML=`<b>${escapeHtml(p.name)}</b> <span class="muted">(POI ID: ${escapeHtml(p.id||'정보 없음')})</span><table><thead><tr><th>좌표 종류</th><th>위도</th><th>경도</th></tr></thead><tbody>${rows.map(([name,v])=>`<tr><td>${name}</td><td>${v?escapeHtml(v.lat):'없음'}</td><td>${v?escapeHtml(v.lon):'없음'}</td></tr>`).join('')}</tbody></table><p class="muted">주소: ${escapeHtml(p.address||'정보 없음')}<br>지도에는 현재 선택한 장소의 체크된 좌표만 표시됩니다. 마커를 켜고 끄며 위치 차이를 비교하세요.</p>`;
+}
+function selectPlace(i){selectedIndex=i;const p=places[i];renderList();showDetails(i);const c=p.center||p.noor||p.front||p.latlon||p.gps;if(c&&map){map.setCenter(new Tmapv2.LatLng(c.lat,c.lon));map.setZoom(22)}drawMarkers()}
+async function search(){
+ const key=getKey(),q=$('keyword').value.trim();if(!key){setStatus('TMAP AppKey를 입력해주세요.');return}if(!q){setStatus('검색어를 입력해주세요.');return}if(!initMap())return;
+ $('searchBtn').disabled=true;setStatus('TMAP 장소 검색 중...');
+ try{
+  const params=new URLSearchParams({version:'1',searchKeyword:q,searchType:'all',page:'1',count:'45',resCoordType:'WGS84GEO',reqCoordType:'WGS84GEO',multiPoint:'N',poiGroupYn:'N',searchtypCd:'A'});
+  const response=await fetch('https://apis.openapi.sk.com/tmap/pois?'+params.toString(),{method:'GET',headers:{accept:'application/json',appKey:key}});
+  const raw=await response.text();let data;try{data=JSON.parse(raw)}catch(e){throw new Error('JSON 응답을 해석하지 못했습니다: '+raw.slice(0,250))}
+  if(!response.ok)throw new Error(`TMAP 요청 실패 (HTTP ${response.status}): ${data?.error?.message||data?.errorMessage||data?.message||raw.slice(0,250)}`);
+  const rawPois=getPoiArray(data);
+  places=rawPois.map(p=>{
+   const center=pickCoord(p,['centerLat','centerLon']);
+   const noor=pickCoord(p,['noorLat','noorLon']);
+   const front=pickCoord(p,['frontLat','frontLon']);
+   const latlon=pickCoord(p,['lat','lon']);
+   const gps=pickCoord(p,['gpsY','gpsX']);
+   return {raw:p,name:p.name||'(이름 없음)',id:p.id||p.poiId||p.poiID||'',center,noor,front,latlon,gps,address:(Array.isArray(p.newAddressList?.newAddress)?p.newAddressList.newAddress[0]?.fullAddressRoad:p.newAddressList?.newAddress?.fullAddressRoad)||p.upperAddrName||''};
+  });
+  selectedIndex=places.length?0:-1;renderList();
+  if(places.length){const first=places[0];const c=first.center||first.noor||first.front||first.latlon||first.gps;if(c){map.setCenter(new Tmapv2.LatLng(c.lat,c.lon));map.setZoom(22)}showDetails(0)}
+  drawMarkers();
+  const cCount=places.filter(p=>p.center).length,nCount=places.filter(p=>p.noor).length;
+  setStatus(`검색 ${places.length}건 · center 좌표 ${cCount}건 · noor 좌표 ${nCount}건. 목록에서 장소를 선택해 비교하세요.`);
+ }catch(e){setStatus('오류: '+(e.message||e));console.error(e)}finally{$('searchBtn').disabled=false}
+}
+$('searchBtn').addEventListener('click',search);$('keyword').addEventListener('keydown',e=>{if(e.key==='Enter')search()});
+['showCenter','showNoor','showFront','showLatlon','showGps'].forEach(id=>$(id).addEventListener('change',drawMarkers));
+$('saveKey').addEventListener('click',()=>{const k=getKey();if(!k){setStatus('AppKey를 입력해주세요.');return}try{localStorage.setItem('tmap_app_key',k);setStatus('AppKey를 이 브라우저에 저장했습니다.')}catch(e){setStatus('저장하지 못했습니다. 검색 시 입력한 키를 사용합니다.')}});
+window.addEventListener('load',()=>{if(initMap())setStatus('준비 완료. 검색어를 입력하고 검색을 눌러주세요.');else $('map').innerHTML='<div style="padding:18px;color:#b42318;font-size:14px;line-height:1.6">TMAP 지도를 불러오지 못했습니다.<br>AppKey 또는 Raster Map SDK 사용 권한을 확인한 뒤 새로고침해주세요.</div>'});
+</script>
+</body>
+</html>
