@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TMAP Raster Map 단독 테스트</title>
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f4f6f8; color: #17202a; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 24px; }
+    h1 { margin: 0 0 8px; font-size: 24px; }
+    .desc { margin: 0 0 20px; color: #5d6875; line-height: 1.55; }
+    .panel { background: #fff; border: 1px solid #dce2e8; border-radius: 14px; padding: 18px; box-shadow: 0 3px 14px rgba(20,35,50,.05); }
+    .keyrow { display: flex; gap: 8px; }
+    input { flex: 1; min-width: 0; padding: 12px 13px; border: 1px solid #cbd3dc; border-radius: 9px; font-size: 15px; }
+    button { border: 0; border-radius: 9px; padding: 11px 15px; font-size: 14px; font-weight: 650; cursor: pointer; background: #1769aa; color: white; }
+    button.secondary { background: #e8edf2; color: #263442; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .hint { margin: 10px 0 0; color: #6b7580; font-size: 12px; line-height: 1.5; }
+    .status { margin-top: 14px; padding: 12px 14px; border-radius: 9px; background: #eef2f6; color: #334155; font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .status.ok { background: #e8f6ee; color: #17633b; }
+    .status.error { background: #fff0ef; color: #a12d25; }
+    #map_div { width: 100%; height: min(68vh, 650px); min-height: 420px; margin-top: 16px; background: #e7ebef; border: 1px solid #d1d8df; border-radius: 12px; overflow: hidden; }
+    .foot { margin: 12px 2px 0; color: #6b7580; font-size: 12px; }
+    @media (max-width: 620px) { .wrap { padding: 14px; } .keyrow { flex-direction: column; } #map_div { min-height: 360px; height: 58vh; } }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <h1>TMAP Raster Map 단독 테스트</h1>
+    <p class="desc">카페 파인더와 완전히 분리된 테스트 페이지입니다. AppKey로 TMAP JS V2 지도를 불러오고, 지도 표시와 기본 마커 동작만 확인합니다.</p>
+
+    <section class="panel">
+      <label for="appKey"><strong>TMAP AppKey</strong></label>
+      <div class="keyrow" style="margin-top:8px">
+        <input id="appKey" type="password" autocomplete="off" placeholder="발급받은 TMAP AppKey를 입력하세요">
+        <button type="button" id="toggleKey" class="secondary">키 보기</button>
+      </div>
+      <div class="actions">
+        <button type="button" id="loadMap">지도 불러오기</button>
+        <button type="button" id="addMarker" class="secondary" disabled>중심에 마커 추가</button>
+        <button type="button" id="resetMap" class="secondary" disabled>대전 중심으로 이동</button>
+      </div>
+      <p class="hint">AppKey는 이 페이지에서 지도 SDK를 요청하는 데만 사용하며 별도로 저장하지 않습니다. 공개 웹페이지에 키를 배포할 때는 키 노출 및 허용 도메인 설정을 확인하세요.</p>
+      <div id="status" class="status">대기 중: AppKey를 입력하고 ‘지도 불러오기’를 눌러주세요.</div>
+      <div id="map_div" aria-label="TMAP Raster Map 테스트 지도"></div>
+      <p class="foot">초기 중심: 대전광역시청 부근 (위도 36.3504, 경도 127.3845) · 지도 SDK: Raster Map JS V2</p>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      'use strict';
+      const DEFAULT_CENTER = { lat: 36.3504, lng: 127.3845 };
+      const statusEl = document.getElementById('status');
+      const keyEl = document.getElementById('appKey');
+      const loadBtn = document.getElementById('loadMap');
+      const markerBtn = document.getElementById('addMarker');
+      const resetBtn = document.getElementById('resetMap');
+      let map = null;
+      let marker = null;
+      let sdkPromise = null;
+
+      function setStatus(message, type = '') {
+        statusEl.textContent = message;
+        statusEl.className = 'status' + (type ? ' ' + type : '');
+      }
+
+      function loadSdk(appKey) {
+        if (window.Tmapv2 && typeof window.Tmapv2.Map === 'function') return Promise.resolve();
+        if (sdkPromise) return sdkPromise;
+        sdkPromise = new Promise((resolve, reject) => {
+          const existing = document.getElementById('tmap-raster-sdk');
+          if (existing) existing.remove();
+          const script = document.createElement('script');
+          script.id = 'tmap-raster-sdk';
+          script.charset = 'utf-8';
+          script.src = 'https://apis.openapi.sk.com/tmap/jsv2?version=1&appKey=' + encodeURIComponent(appKey);
+          script.onload = () => {
+            if (window.Tmapv2 && typeof window.Tmapv2.Map === 'function') resolve();
+            else reject(new Error('SDK 스크립트는 응답했지만 Tmapv2.Map 객체가 생성되지 않았습니다. 상품 이용 권한, AppKey, 허용 도메인 및 브라우저 콘솔을 확인해야 합니다.'));
+          };
+          script.onerror = () => reject(new Error('TMAP 지도 SDK 스크립트를 불러오지 못했습니다. 네트워크, AppKey, 상품 이용 설정을 확인해주세요.'));
+          document.head.appendChild(script);
+        }).catch(error => {
+          sdkPromise = null;
+          throw error;
+        });
+        return sdkPromise;
+      }
+
+      function createMap() {
+        const center = new Tmapv2.LatLng(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng);
+        map = new Tmapv2.Map('map_div', {
+          center,
+          width: '100%',
+          height: '100%',
+          zoom: 15,
+          zoomControl: true,
+          scrollwheel: true
+        });
+        markerBtn.disabled = false;
+        resetBtn.disabled = false;
+        setStatus('지도 객체 생성 요청 완료. 실제 지도 타일이 표시되는지 확인해주세요.', 'ok');
+      }
+
+      loadBtn.addEventListener('click', async () => {
+        const appKey = keyEl.value.trim();
+        if (!appKey) {
+          setStatus('AppKey를 먼저 입력해주세요.', 'error');
+          keyEl.focus();
+          return;
+        }
+        loadBtn.disabled = true;
+        markerBtn.disabled = true;
+        resetBtn.disabled = true;
+        setStatus('TMAP Raster Map JS V2 SDK를 불러오는 중입니다...');
+        try {
+          await loadSdk(appKey);
+          document.getElementById('map_div').innerHTML = '';
+          marker = null;
+          createMap();
+        } catch (error) {
+          setStatus('지도 초기화 실패\n' + (error && error.message ? error.message : String(error)), 'error');
+        } finally {
+          loadBtn.disabled = false;
+        }
+      });
+
+      markerBtn.addEventListener('click', () => {
+        if (!map || !window.Tmapv2) return;
+        if (marker) marker.setMap(null);
+        marker = new Tmapv2.Marker({
+          position: new Tmapv2.LatLng(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng),
+          map,
+          title: '테스트 마커'
+        });
+        setStatus('테스트 마커를 지도 중심 좌표에 추가했습니다.', 'ok');
+      });
+
+      resetBtn.addEventListener('click', () => {
+        if (!map || !window.Tmapv2) return;
+        map.setCenter(new Tmapv2.LatLng(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng));
+        map.setZoom(15);
+        setStatus('지도를 대전 중심으로 이동했습니다.', 'ok');
+      });
+
+      document.getElementById('toggleKey').addEventListener('click', event => {
+        const showing = keyEl.type === 'text';
+        keyEl.type = showing ? 'password' : 'text';
+        event.currentTarget.textContent = showing ? '키 보기' : '키 숨기기';
+      });
+    })();
+  </script>
+</body>
+</html>
